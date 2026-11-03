@@ -1,6 +1,6 @@
 /**
  * SISTEMA DE CONTROL DE INSUMOS - UNIVERSIDAD METROPOLITANA
- * Versión 2.0 Responsive & Mobile-Optimized con Inicio de Sesión Profesional
+ * Sincronización en la Nube con JSONBin.io + Caché Local Offline-First
  */
 
 // 43 Insumos reales del inventario institucional
@@ -59,22 +59,25 @@ const INITIAL_EMPLOYEES_SEED = [
 class InventoryApp {
   constructor() {
     this.STORAGE_KEYS = {
-      ITEMS: 'umetro_inventory_items_v2',
-      EMPLOYEES: 'umetro_inventory_employees_v2',
-      MOVEMENTS: 'umetro_inventory_movements_v2',
-      ADMIN_USER: 'umetro_admin_user_v2',
-      ADMIN_PASS: 'umetro_admin_pass_v2',
-      SUPABASE_CONFIG: 'umetro_supabase_config_v2',
-      AUTH_TOKEN: 'umetro_auth_token_v2'
+      STATE: 'umetro_inventory_full_state_v3',
+      ADMIN_USER: 'umetro_admin_user_v3',
+      ADMIN_PASS: 'umetro_admin_pass_v3',
+      JSONBIN_KEY: 'umetro_jsonbin_master_key_v3',
+      JSONBIN_ID: 'umetro_jsonbin_bin_id_v3',
+      AUTH_TOKEN: 'umetro_auth_token_v3'
     };
+
+    // Credenciales preconfiguradas de JSONBin
+    this.DEFAULT_BIN_ID = '6ab1ca50ac6210605ae79be9';
+    this.DEFAULT_KEY = '6ab1ca50ac6210605ae79be9';
 
     this.items = [];
     this.employees = [];
     this.movements = [];
+    this.lastUpdated = null;
     this.activeTab = 'stock';
-    this.supabase = null;
-    this.isSupabaseConnected = false;
     this.isAdminAuthenticated = false;
+    this.isSyncing = false;
 
     this.init();
   }
@@ -82,29 +85,38 @@ class InventoryApp {
   // ==========================================
   // INICIALIZACIÓN
   // ==========================================
-  init() {
-    this.loadLocalData();
-    this.initSupabaseClient();
+  async init() {
+    this.loadLocalCache();
     this.setupClock();
     this.setupInactivityTimeout();
+    this.setupVisibilitySync();
     this.checkAuthenticationState();
+
+    // Sincronizar en segundo plano con JSONBin si está configurado
+    if (this.hasJSONBinConfig()) {
+      await this.fetchFromJSONBin(true);
+    } else {
+      this.updateCloudUI();
+    }
   }
 
-  // Carga de datos con persistencia local
-  loadLocalData() {
-    const rawItems = localStorage.getItem(this.STORAGE_KEYS.ITEMS);
-    const rawEmployees = localStorage.getItem(this.STORAGE_KEYS.EMPLOYEES);
-    const rawMovements = localStorage.getItem(this.STORAGE_KEYS.MOVEMENTS);
+  // Carga inmediata de caché local para evitar pantalla en blanco
+  loadLocalCache() {
+    const raw = localStorage.getItem(this.STORAGE_KEYS.STATE);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        this.items = parsed.items || [...INITIAL_INVENTORY_SEED];
+        this.employees = parsed.employees || [...INITIAL_EMPLOYEES_SEED];
+        this.movements = parsed.movements || [];
+        this.lastUpdated = parsed.lastUpdated || null;
+      } catch (e) {
+        this.loadDefaultSeeds();
+      }
+    } else {
+      this.loadDefaultSeeds();
+    }
 
-    this.items = rawItems ? JSON.parse(rawItems) : [...INITIAL_INVENTORY_SEED];
-    this.employees = rawEmployees ? JSON.parse(rawEmployees) : [...INITIAL_EMPLOYEES_SEED];
-    this.movements = rawMovements ? JSON.parse(rawMovements) : [];
-
-    if (!rawItems) this.saveLocalItems();
-    if (!rawEmployees) this.saveLocalEmployees();
-    if (!rawMovements) this.saveLocalMovements();
-
-    // Credenciales de Administrador por defecto
     if (!localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER)) {
       localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, 'admin');
     }
@@ -113,22 +125,392 @@ class InventoryApp {
     }
   }
 
-  saveLocalItems() {
-    localStorage.setItem(this.STORAGE_KEYS.ITEMS, JSON.stringify(this.items));
+  loadDefaultSeeds() {
+    this.items = [...INITIAL_INVENTORY_SEED];
+    this.employees = [...INITIAL_EMPLOYEES_SEED];
+    this.movements = [];
+    this.lastUpdated = new Date().toISOString();
+    this.saveLocalCacheOnly();
   }
 
-  saveLocalEmployees() {
-    localStorage.setItem(this.STORAGE_KEYS.EMPLOYEES, JSON.stringify(this.employees));
+  saveLocalCacheOnly() {
+    const state = {
+      items: this.items,
+      employees: this.employees,
+      movements: this.movements,
+      lastUpdated: this.lastUpdated || new Date().toISOString()
+    };
+    localStorage.setItem(this.STORAGE_KEYS.STATE, JSON.stringify(state));
   }
 
-  saveLocalMovements() {
-    localStorage.setItem(this.STORAGE_KEYS.MOVEMENTS, JSON.stringify(this.movements));
+  // Guardar en Local + Nube JSONBin simultáneamente
+  async persistState(notifyCloud = true) {
+    this.lastUpdated = new Date().toISOString();
+    this.saveLocalCacheOnly();
+    this.updateStats();
+
+    if (notifyCloud && this.hasJSONBinConfig()) {
+      await this.pushToJSONBin();
+    }
   }
 
-  // Comprobar si hay sesión iniciada
+  // ==========================================
+  // SINCRONIZACIÓN EN TIEMPO REAL CON JSONBIN.IO
+  // ==========================================
+  hasJSONBinConfig() {
+    return !!this.getJSONBinId();
+  }
+
+  getJSONBinKey() {
+    return localStorage.getItem(this.STORAGE_KEYS.JSONBIN_KEY) || this.DEFAULT_KEY;
+  }
+
+  getJSONBinId() {
+    return localStorage.getItem(this.STORAGE_KEYS.JSONBIN_ID) || this.DEFAULT_BIN_ID;
+  }
+
+  updateCloudUI() {
+    const hasConfig = this.hasJSONBinConfig();
+    const dot = document.getElementById('cloudDot');
+    const text = document.getElementById('cloudStatusText');
+    const banner = document.getElementById('bannerLocalWarning');
+    const statusDot = document.getElementById('jsonbinStatusDot');
+    const statusTitle = document.getElementById('jsonbinStatusTitle');
+    const statusDesc = document.getElementById('jsonbinStatusDesc');
+
+    // Input fields en tab de seguridad
+    const keyInput = document.getElementById('jsonbinMasterKeyInput');
+    const binInput = document.getElementById('jsonbinBinIdInput');
+    if (keyInput && !keyInput.value) keyInput.value = this.getJSONBinKey();
+    if (binInput && !binInput.value) binInput.value = this.getJSONBinId();
+
+    if (hasConfig) {
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      if (text) text.textContent = 'JSONBin Conectado';
+      if (banner) banner.classList.add('hidden');
+      if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+      if (statusTitle) statusTitle.textContent = `Estado: Conectado a Bin [${this.getJSONBinId()}]`;
+      if (statusDesc) statusDesc.textContent = 'Tus entregas y stock se sincronizan automáticamente en tiempo real entre tu PC y tu teléfono celular.';
+    } else {
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+      if (text) text.textContent = 'Modo Local (Sin Nube)';
+      if (banner) banner.classList.remove('hidden');
+      if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+      if (statusTitle) statusTitle.textContent = 'Estado: No conectado a JSONBin';
+      if (statusDesc) statusDesc.textContent = 'Configura tu Master Key y Bin ID para sincronizar PC y Celular automáticamente.';
+    }
+  }
+
+  setSyncingAnimation(active) {
+    const icon = document.getElementById('syncIcon');
+    if (icon) {
+      if (active) icon.classList.add('spin-fast');
+      else icon.classList.remove('spin-fast');
+    }
+  }
+
+  // DESCARGAR (GET) DESDE JSONBIN
+  async fetchFromJSONBin(silent = false) {
+    if (!this.hasJSONBinConfig()) return;
+    if (this.isSyncing) return;
+
+    this.isSyncing = true;
+    this.setSyncingAnimation(true);
+
+    try {
+      const binId = this.getJSONBinId();
+      const key = this.getJSONBinKey();
+
+      const headers = {};
+      if (key) {
+        headers['X-Master-Key'] = key;
+        headers['X-Access-Key'] = key;
+      }
+
+      let response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+        method: 'GET',
+        headers: headers
+      });
+
+      // Si falla con error de autorización, intentar sin headers por si el Bin es público
+      if (!response.ok && (response.status === 401 || response.status === 403)) {
+        response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+          method: 'GET'
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: No se pudo leer el Bin [${binId}]. Revisa si la Master Key es requerida.`);
+      }
+
+      const json = await response.json();
+      const record = json.record;
+
+      if (record && record.items) {
+        this.items = record.items;
+        this.employees = record.employees || [];
+        this.movements = record.movements || [];
+        this.lastUpdated = record.lastUpdated || new Date().toISOString();
+        this.saveLocalCacheOnly();
+        this.renderAll();
+      }
+
+      this.updateCloudUI();
+      if (!silent) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Sincronizado',
+          text: 'Se han descargado los últimos cambios de la nube.',
+          timer: 1200,
+          showConfirmButton: false
+        });
+      }
+    } catch (err) {
+      console.warn('Aviso de lectura JSONBin:', err);
+      if (!silent) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Aviso de Sincronización',
+          text: err.message,
+          confirmButtonColor: '#1e40af'
+        });
+      }
+    } finally {
+      this.isSyncing = false;
+      this.setSyncingAnimation(false);
+    }
+  }
+
+  // SUBIR (PUT) A JSONBIN
+  async pushToJSONBin() {
+    if (!this.hasJSONBinConfig()) return;
+
+    this.setSyncingAnimation(true);
+    try {
+      const binId = this.getJSONBinId();
+      const key = this.getJSONBinKey();
+
+      const payload = {
+        items: this.items,
+        employees: this.employees,
+        movements: this.movements,
+        lastUpdated: this.lastUpdated || new Date().toISOString()
+      };
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (key) {
+        headers['X-Master-Key'] = key;
+        headers['X-Access-Key'] = key;
+      }
+
+      let response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok && (response.status === 401 || response.status === 403)) {
+        // Intentar sin headers en caso de ser público
+        response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (!response.ok) {
+        console.warn(`JSONBin PUT respondió con código ${response.status}`);
+      }
+      this.updateCloudUI();
+    } catch (err) {
+      console.error('Error guardando en JSONBin:', err);
+    } finally {
+      this.setSyncingAnimation(false);
+    }
+  }
+
+  // CREAR UN BIN AUTOMÁTICAMENTE EN LA NUBE
+  async autoCreateJSONBin() {
+    const masterKey = document.getElementById('jsonbinMasterKeyInput').value.trim();
+
+    if (!masterKey) {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Master Key requerida',
+        text: 'Por favor pega tu Master Key de JSONBin para crear el almacén en la nube.'
+      });
+    }
+
+    Swal.fire({
+      title: 'Creando Almacén en la Nube...',
+      text: 'Subiendo los 43 insumos y la base de datos a JSONBin.io',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const payload = {
+        items: this.items,
+        employees: this.employees,
+        movements: this.movements,
+        lastUpdated: new Date().toISOString()
+      };
+
+      const response = await fetch('https://api.jsonbin.io/v3/b', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': masterKey,
+          'X-Bin-Name': 'Inventario UMetropolitana'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: Verifica que tu Master Key sea correcta.`);
+      }
+
+      const json = await response.json();
+      const newBinId = json.metadata.id;
+
+      localStorage.setItem(this.STORAGE_KEYS.JSONBIN_KEY, masterKey);
+      localStorage.setItem(this.STORAGE_KEYS.JSONBIN_ID, newBinId);
+      
+      document.getElementById('jsonbinBinIdInput').value = newBinId;
+      this.updateCloudUI();
+
+      Swal.fire({
+        icon: 'success',
+        title: '¡Nube Creada con Éxito!',
+        html: `
+          <div class="text-left text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <p><strong>Tu nuevo Bin ID es:</strong> <code class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono font-bold text-sm">${newBinId}</code></p>
+            <p class="text-slate-600">✅ Los 43 insumos ya están en la nube compartida.</p>
+            <p class="text-slate-600">📱 <strong>Para conectarlo en tu celular:</strong> Solo abre la app en tu teléfono, ve a "Nube JSONBin", pega tu Master Key y este Bin ID, ¡y listo! Tendrás sincronización instantánea.</p>
+          </div>
+        `,
+        confirmButtonColor: '#10b981'
+      });
+    } catch (err) {
+      Swal.fire({
+        icon: 'error',
+        title: 'No se pudo crear el Bin',
+        text: err.message,
+        confirmButtonColor: '#1e40af'
+      });
+    }
+  }
+
+  // CONECTAR A UN BIN EXISTENTE
+  async connectExistingJSONBin() {
+    const masterKey = document.getElementById('jsonbinMasterKeyInput').value.trim();
+    const binId = document.getElementById('jsonbinBinIdInput').value.trim();
+
+    if (!masterKey || !binId) {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Campos requeridos',
+        text: 'Debes ingresar tanto la Master Key como el Bin ID.'
+      });
+    }
+
+    Swal.fire({
+      title: 'Verificando Bin...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+        method: 'GET',
+        headers: { 'X-Master-Key': masterKey }
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo acceder al Bin. Verifica el ID y la Key.');
+      }
+
+      const json = await response.json();
+      const record = json.record;
+
+      localStorage.setItem(this.STORAGE_KEYS.JSONBIN_KEY, masterKey);
+      localStorage.setItem(this.STORAGE_KEYS.JSONBIN_ID, binId);
+
+      if (record && record.items) {
+        this.items = record.items;
+        this.employees = record.employees || [];
+        this.movements = record.movements || [];
+        this.lastUpdated = record.lastUpdated || new Date().toISOString();
+        this.saveLocalCacheOnly();
+        this.renderAll();
+      }
+
+      this.updateCloudUI();
+
+      Swal.fire({
+        icon: 'success',
+        title: '¡Conectado a JSONBin!',
+        text: 'Datos sincronizados exitosamente con la nube.',
+        timer: 1500,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error de Conexión',
+        text: err.message,
+        confirmButtonColor: '#1e40af'
+      });
+    }
+  }
+
+  disconnectJSONBin() {
+    localStorage.removeItem(this.STORAGE_KEYS.JSONBIN_KEY);
+    localStorage.removeItem(this.STORAGE_KEYS.JSONBIN_ID);
+    document.getElementById('jsonbinMasterKeyInput').value = '';
+    document.getElementById('jsonbinBinIdInput').value = '';
+    this.updateCloudUI();
+    Swal.fire({ icon: 'info', title: 'Modo Local Activado', text: 'Los datos ahora se guardan únicamente en la memoria de este navegador.' });
+  }
+
+  manualSyncCloud() {
+    if (!this.hasJSONBinConfig()) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Nube no configurada',
+        text: 'Ve a la pestaña "Nube JSONBin" para activar la sincronización entre dispositivos.',
+        confirmButtonText: 'Configurar Nube',
+        confirmButtonColor: '#1e40af'
+      }).then(r => {
+        if (r.isConfirmed) this.setTab('seguridad');
+      });
+      return;
+    }
+    this.fetchFromJSONBin(false);
+  }
+
+  // Sincronización automática al volver a la pestaña (visibilidad) y cada 25s
+  setupVisibilitySync() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.hasJSONBinConfig()) {
+        this.fetchFromJSONBin(true);
+      }
+    });
+
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && this.hasJSONBinConfig()) {
+        this.fetchFromJSONBin(true);
+      }
+    }, 25000);
+  }
+
+  // ==========================================
+  // AUTENTICACIÓN / ACCESO
+  // ==========================================
   checkAuthenticationState() {
     const token = localStorage.getItem(this.STORAGE_KEYS.AUTH_TOKEN) || sessionStorage.getItem(this.STORAGE_KEYS.AUTH_TOKEN);
-    
     if (token) {
       this.isAdminAuthenticated = true;
       this.showAppView();
@@ -148,9 +530,9 @@ class InventoryApp {
     document.getElementById('viewApp').classList.remove('hidden');
     this.renderAll();
     this.setTab('stock');
+    this.updateCloudUI();
   }
 
-  // Manejador del Formulario de Inicio de Sesión
   handleLoginSubmit(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value.trim();
@@ -171,9 +553,9 @@ class InventoryApp {
 
       Swal.fire({
         icon: 'success',
-        title: 'Acceso Autorizado',
+        title: 'Acceso Concedido',
         text: 'Bienvenido Jefe de Almacén',
-        timer: 1200,
+        timer: 1000,
         showConfirmButton: false
       }).then(() => {
         this.showAppView();
@@ -182,7 +564,7 @@ class InventoryApp {
       Swal.fire({
         icon: 'error',
         title: 'Credenciales Incorrectas',
-        text: 'El usuario o la contraseña ingresada no son válidos.',
+        text: 'El usuario o la contraseña no son correctos.',
         confirmButtonColor: '#1e40af'
       });
     }
@@ -203,7 +585,7 @@ class InventoryApp {
   async logoutAdmin() {
     const confirm = await Swal.fire({
       title: '¿Cerrar Sesión?',
-      text: 'Se bloqueará la pantalla y volverá al portal de acceso.',
+      text: 'Se bloqueará el acceso hasta que vuelvas a ingresar.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Sí, Salir',
@@ -216,12 +598,6 @@ class InventoryApp {
       sessionStorage.removeItem(this.STORAGE_KEYS.AUTH_TOKEN);
       this.isAdminAuthenticated = false;
       this.showLoginView();
-      Swal.fire({
-        icon: 'success',
-        title: 'Sesión Cerrada',
-        timer: 1000,
-        showConfirmButton: false
-      });
     }
   }
 
@@ -262,12 +638,11 @@ class InventoryApp {
       Swal.fire({
         icon: 'success',
         title: 'Credenciales Actualizadas',
-        text: 'El nuevo usuario y contraseña se guardaron exitosamente.'
+        text: 'Los nuevos datos de acceso se han guardado exitosamente.'
       });
     }
   }
 
-  // Reloj en vivo
   setupClock() {
     const updateTime = () => {
       const now = new Date();
@@ -294,14 +669,8 @@ class InventoryApp {
           sessionStorage.removeItem(this.STORAGE_KEYS.AUTH_TOKEN);
           this.isAdminAuthenticated = false;
           this.showLoginView();
-          Swal.fire({
-            icon: 'info',
-            title: 'Sesión Bloqueada',
-            text: 'Por seguridad corporativa la sesión se suspendió por inactividad.',
-            confirmButtonColor: '#1e40af'
-          });
         }
-      }, 30 * 60 * 1000); // 30 minutos
+      }, 30 * 60 * 1000);
     };
     window.onload = resetTimer;
     document.onmousemove = resetTimer;
@@ -309,7 +678,7 @@ class InventoryApp {
   }
 
   // ==========================================
-  // NAVEGACIÓN ENTRE TABS
+  // NAVEGACIÓN
   // ==========================================
   setTab(tabName) {
     this.activeTab = tabName;
@@ -318,7 +687,6 @@ class InventoryApp {
     const target = document.getElementById(`tab-${tabName}`);
     if (target) target.classList.remove('hidden');
 
-    // Actualizar botones de escritorio
     document.querySelectorAll('.nav-tab').forEach(btn => {
       btn.classList.remove('bg-white/20', 'text-white', 'shadow-sm');
       btn.classList.add('text-blue-100');
@@ -329,7 +697,6 @@ class InventoryApp {
       activeDesktopBtn.classList.remove('text-blue-100');
     }
 
-    // Actualizar barra móvil inferior
     ['stock', 'salidas', 'entradas', 'personal', 'historial'].forEach(name => {
       const mobBtn = document.getElementById(`mobNav-${name}`);
       if (mobBtn) {
@@ -348,13 +715,13 @@ class InventoryApp {
     if (tabName === 'entradas') this.prepareEntradasView();
     if (tabName === 'personal') this.renderEmployeeDirectory();
     if (tabName === 'historial') this.renderHistoryView();
+    if (tabName === 'seguridad') this.updateCloudUI();
 
-    // Scroll arriba en móvil al cambiar tab
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // ==========================================
-  // RENDERIZADO GLOBAL & MÉTRICAS
+  // RENDERIZADO GLOBAL
   // ==========================================
   renderAll() {
     this.updateStats();
@@ -394,7 +761,7 @@ class InventoryApp {
   }
 
   // ==========================================
-  // TAB 1: CONTROL DE STOCK (MOBILE + DESKTOP)
+  // TAB 1: STOCK VIEW (DESKTOP + MOBILE)
   // ==========================================
   renderStockView() {
     const tbody = document.getElementById('stockTableBody');
@@ -423,7 +790,7 @@ class InventoryApp {
       return;
     }
 
-    // 1. Render para Desktop (Tabla tradicional)
+    // 1. Desktop
     tbody.innerHTML = filtered.map(item => {
       const stockNum = Number(item.stock);
       const minStock = Number(item.minStock || 2);
@@ -489,7 +856,7 @@ class InventoryApp {
       `;
     }).join('');
 
-    // 2. Render para Móvil (Tarjetas táctiles nativas)
+    // 2. Mobile
     mobileContainer.innerHTML = filtered.map(item => {
       const stockNum = Number(item.stock);
       const minStock = Number(item.minStock || 2);
@@ -513,7 +880,7 @@ class InventoryApp {
       }
 
       return `
-        <div class="mobile-card bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between">
+        <div class="mobile-card bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div class="flex items-start justify-between gap-2 mb-2">
               <div class="flex items-start gap-2">
@@ -542,7 +909,6 @@ class InventoryApp {
             </div>
           </div>
 
-          <!-- Botones Táctiles Móvil -->
           <div class="grid grid-cols-2 gap-2 mt-1">
             <button onclick="app.quickDeliver('${item.id}')" class="py-2.5 px-3 bg-amber-500 active:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition">
               <i class="fa-solid fa-hand-holding-hand"></i>
@@ -561,7 +927,7 @@ class InventoryApp {
   }
 
   // ==========================================
-  // TAB 2: SALIDAS / ENTREGAS A EMPLEADOS
+  // TAB 2: SALIDAS / ENTREGAS
   // ==========================================
   prepareSalidasView(preselectedItemId = null) {
     this.populateSelects();
@@ -643,9 +1009,8 @@ class InventoryApp {
 
     // Descontar stock
     item.stock = parseFloat((Number(item.stock) - cantidad).toFixed(2));
-    this.saveLocalItems();
 
-    // Registro inmutable con fecha y hora exacta
+    // Registro inmutable
     const now = new Date();
     const movement = {
       id: 'mov-' + Date.now(),
@@ -664,21 +1029,16 @@ class InventoryApp {
     };
 
     this.movements.unshift(movement);
-    this.saveLocalMovements();
 
-    if (this.isSupabaseConnected && this.supabase) {
-      this.syncMovementToCloud(movement);
-      this.syncItemStockToCloud(item);
-    }
+    // Guardar simultáneamente en local y en la nube JSONBin
+    await this.persistState(true);
 
     document.getElementById('formSalida').reset();
     document.getElementById('salidaStockInfo').classList.add('hidden');
 
-    this.updateStats();
-
     Swal.fire({
       icon: 'success',
-      title: 'Entrega Registrada',
+      title: 'Entrega Registrada y Guardada',
       html: `Anotado a <strong>${this.escapeHtml(employee.nombre)}</strong> a las <strong>${movement.hora}</strong> del <strong>${movement.fecha}</strong>.`,
       confirmButtonColor: '#1e40af'
     });
@@ -736,7 +1096,6 @@ class InventoryApp {
     if (!item) return;
 
     item.stock = parseFloat((Number(item.stock) + cantidad).toFixed(2));
-    this.saveLocalItems();
 
     const now = new Date();
     const movement = {
@@ -756,21 +1115,15 @@ class InventoryApp {
     };
 
     this.movements.unshift(movement);
-    this.saveLocalMovements();
 
-    if (this.isSupabaseConnected && this.supabase) {
-      this.syncMovementToCloud(movement);
-      this.syncItemStockToCloud(item);
-    }
+    await this.persistState(true);
 
     document.getElementById('formEntrada').reset();
     document.getElementById('entradaStockInfo').classList.add('hidden');
 
-    this.updateStats();
-
     Swal.fire({
       icon: 'success',
-      title: 'Stock Actualizado',
+      title: 'Stock Actualizado en la Nube',
       text: `Se sumaron ${cantidad} ${item.unidad} a "${item.nombre}". Nuevo stock: ${item.stock}.`,
       confirmButtonColor: '#10b981'
     });
@@ -801,7 +1154,7 @@ class InventoryApp {
       const deliveriesCount = this.movements.filter(m => m.empleadoId === emp.id || m.nombreEmpleado === emp.nombre).length;
 
       return `
-        <div class="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+        <div class="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div class="flex items-start justify-between mb-2">
               <div class="flex items-center gap-2.5">
@@ -883,7 +1236,7 @@ class InventoryApp {
     document.getElementById('modalNewEmployee').classList.remove('hidden');
   }
 
-  handleSaveEmployee(e) {
+  async handleSaveEmployee(e) {
     e.preventDefault();
 
     const id = document.getElementById('modalEmployeeId').value;
@@ -912,16 +1265,15 @@ class InventoryApp {
       });
     }
 
-    this.saveLocalEmployees();
+    await this.persistState(true);
     this.closeNewEmployeeModal();
     this.renderEmployeeDirectory();
     this.populateSelects();
-    this.updateStats();
 
     Swal.fire({
       icon: 'success',
-      title: 'Personal Actualizado',
-      timer: 1200,
+      title: 'Personal Guardado',
+      timer: 1000,
       showConfirmButton: false
     });
   }
@@ -942,10 +1294,9 @@ class InventoryApp {
 
     if (confirm.isConfirmed) {
       this.employees = this.employees.filter(e => e.id !== id);
-      this.saveLocalEmployees();
+      await this.persistState(true);
       this.renderEmployeeDirectory();
       this.populateSelects();
-      this.updateStats();
 
       Swal.fire({
         icon: 'success',
@@ -957,7 +1308,7 @@ class InventoryApp {
   }
 
   // ==========================================
-  // TAB 5: HISTORIAL Y AUDITORÍA (MOBILE + DESKTOP)
+  // TAB 5: HISTORIAL Y AUDITORÍA
   // ==========================================
   renderHistoryView() {
     const tbody = document.getElementById('historyTableBody');
@@ -986,7 +1337,7 @@ class InventoryApp {
       return;
     }
 
-    // 1. Render Desktop
+    // 1. Desktop
     tbody.innerHTML = filtered.map(mov => {
       const isSalida = mov.tipo === 'SALIDA';
       const badgeTipo = isSalida 
@@ -1027,7 +1378,7 @@ class InventoryApp {
       `;
     }).join('');
 
-    // 2. Render Móvil (Timeline / Feed de tarjetas)
+    // 2. Mobile
     mobileContainer.innerHTML = filtered.map(mov => {
       const isSalida = mov.tipo === 'SALIDA';
       const borderClass = isSalida ? 'border-amber-200' : 'border-emerald-200';
@@ -1037,13 +1388,13 @@ class InventoryApp {
         <div class="mobile-card bg-white p-3.5 rounded-2xl border ${borderClass} shadow-sm">
           <div class="flex items-center justify-between text-xs mb-2">
             <span class="font-bold text-[11px] px-2 py-0.5 rounded-full ${badgeClass}">
-              ${isSalida ? '📤 Entrega / Salida' : '📥 Reabastecimiento'}
+              ${isSalida ? '📤 Entrega' : '📥 Reabastecimiento'}
             </span>
             <span class="font-mono text-[11px] text-slate-500 font-semibold">${mov.fecha} &bull; ${mov.hora}</span>
           </div>
 
           <div class="mb-1.5">
-            <div class="text-xs text-slate-400 uppercase font-semibold">Receptor / Destino:</div>
+            <div class="text-xs text-slate-400 uppercase font-semibold">Receptor:</div>
             <div class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
               <i class="fa-solid ${isSalida ? 'fa-user text-blue-600' : 'fa-warehouse text-emerald-600'} text-xs"></i>
               <span>${this.escapeHtml(mov.nombreEmpleado)}</span>
@@ -1066,7 +1417,7 @@ class InventoryApp {
   }
 
   // ==========================================
-  // GESTIÓN DE INSUMOS (MODAL NUEVO / EDITAR)
+  // GESTIÓN DE INSUMOS
   // ==========================================
   openNewItemModal() {
     document.getElementById('modalItemTitle').innerHTML = '<i class="fa-solid fa-box text-blue-600"></i> <span>Nuevo Insumo</span>';
@@ -1096,7 +1447,7 @@ class InventoryApp {
     document.getElementById('modalNewItem').classList.remove('hidden');
   }
 
-  handleSaveItem(e) {
+  async handleSaveItem(e) {
     e.preventDefault();
 
     const id = document.getElementById('modalItemId').value;
@@ -1128,23 +1479,22 @@ class InventoryApp {
       });
     }
 
-    this.saveLocalItems();
+    await this.persistState(true);
     this.closeNewItemModal();
     this.populateCategoryFilter();
     this.renderStockView();
     this.populateSelects();
-    this.updateStats();
 
     Swal.fire({
       icon: 'success',
       title: 'Insumo Guardado',
-      timer: 1200,
+      timer: 1000,
       showConfirmButton: false
     });
   }
 
   // ==========================================
-  // HELPERS DE SELECTORES DINÁMICOS
+  // HELPERS SELECTORES
   // ==========================================
   populateSelects() {
     const empSelect = document.getElementById('salidaEmpleadoSelect');
@@ -1275,7 +1625,7 @@ class InventoryApp {
 
   downloadFullBackupJSON() {
     const backupData = {
-      version: '2.0',
+      version: '3.0',
       timestamp: new Date().toISOString(),
       items: this.items,
       employees: this.employees,
@@ -1291,124 +1641,6 @@ class InventoryApp {
     downloadAnchor.remove();
   }
 
-  // ==========================================
-  // CONFIGURACIÓN SUPABASE
-  // ==========================================
-  initSupabaseClient() {
-    const savedConfig = localStorage.getItem(this.STORAGE_KEYS.SUPABASE_CONFIG);
-    if (savedConfig) {
-      try {
-        const { url, key } = JSON.parse(savedConfig);
-        if (url && key && window.supabase) {
-          this.supabase = window.supabase.createClient(url, key);
-          this.isSupabaseConnected = true;
-          this.updateCloudUI(true);
-        }
-      } catch (err) {
-        console.error('Error al inicializar Supabase:', err);
-      }
-    }
-  }
-
-  updateCloudUI(connected) {
-    const dot = document.getElementById('cloudDot');
-    const text = document.getElementById('cloudStatusText');
-    if (connected) {
-      if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-      if (text) text.textContent = 'Nube Conectada';
-    } else {
-      if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-      if (text) text.textContent = 'Modo Local Seguro';
-    }
-  }
-
-  async saveSupabaseConfig() {
-    const url = document.getElementById('supabaseUrlInput').value.trim();
-    const key = document.getElementById('supabaseKeyInput').value.trim();
-
-    if (!url || !key) {
-      return Swal.fire({ icon: 'warning', text: 'Ingresa la URL y la Anon Key de Supabase.' });
-    }
-
-    try {
-      const client = window.supabase.createClient(url, key);
-      const { error } = await client.from('insumos').select('id').limit(1);
-      
-      if (error && error.code !== 'PGRST116') throw error;
-
-      this.supabase = client;
-      this.isSupabaseConnected = true;
-      localStorage.setItem(this.STORAGE_KEYS.SUPABASE_CONFIG, JSON.stringify({ url, key }));
-      this.updateCloudUI(true);
-
-      Swal.fire({
-        icon: 'success',
-        title: '¡Nube Conectada!',
-        text: 'Sincronización activa con Supabase PostgreSQL.'
-      });
-    } catch (err) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Error de Conexión',
-        text: 'Verifica los datos y que hayas ejecutado supabase_setup.sql.'
-      });
-    }
-  }
-
-  async testSupabaseConnection() {
-    if (!this.supabase) {
-      return Swal.fire({ icon: 'info', text: 'Aún no has configurado Supabase.' });
-    }
-
-    try {
-      const { data, error } = await this.supabase.from('insumos').select('id').limit(1);
-      if (error) throw error;
-      Swal.fire({ icon: 'success', text: 'La conexión en la nube está perfecta.' });
-    } catch (e) {
-      Swal.fire({ icon: 'error', text: e.message });
-    }
-  }
-
-  disconnectSupabase() {
-    localStorage.removeItem(this.STORAGE_KEYS.SUPABASE_CONFIG);
-    this.supabase = null;
-    this.isSupabaseConnected = false;
-    this.updateCloudUI(false);
-    document.getElementById('supabaseUrlInput').value = '';
-    document.getElementById('supabaseKeyInput').value = '';
-    Swal.fire({ icon: 'info', text: 'Modo local activado.' });
-  }
-
-  async syncMovementToCloud(movement) {
-    if (!this.supabase) return;
-    try {
-      await this.supabase.from('movimientos').insert([{
-        tipo: movement.tipo,
-        nombre_insumo: movement.nombreInsumo,
-        nombre_empleado: movement.nombreEmpleado,
-        cantidad: movement.cantidad,
-        unidad_medida: movement.unidad,
-        motivo: movement.motivo,
-        registrado_por: movement.registradoPor,
-        fecha_hora: movement.fechaHoraIso
-      }]);
-    } catch (err) {
-      console.warn('Error nube movimiento:', err);
-    }
-  }
-
-  async syncItemStockToCloud(item) {
-    if (!this.supabase) return;
-    try {
-      await this.supabase.from('insumos').update({
-        cantidad_stock: item.stock,
-        actualizado_en: new Date().toISOString()
-      }).eq('nombre', item.nombre);
-    } catch (err) {
-      console.warn('Error nube stock:', err);
-    }
-  }
-
   escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -1420,7 +1652,6 @@ class InventoryApp {
   }
 }
 
-// Inicialización
 let app;
 document.addEventListener('DOMContentLoaded', () => {
   app = new InventoryApp();

@@ -44,9 +44,6 @@
   <!-- SheetJS CDN (Excel Export) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <!-- Supabase JS CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
   <style>
     /* Prevención de desbordamientos en móviles */
     html, body {
@@ -54,18 +51,22 @@
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Custom scrollbars */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     
-    /* Efectos de tarjeta mobile */
     .mobile-card {
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     .mobile-card:active {
       transform: scale(0.985);
+    }
+    .spin-fast {
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -168,34 +169,41 @@
             </div>
           </div>
 
-          <!-- Perfil Admin & Cerrar Sesión -->
-          <div class="flex items-center space-x-1.5 sm:space-x-3">
-            <!-- Indicador Nube / Local -->
-            <button onclick="app.setTab('seguridad')" class="flex items-center gap-1.5 text-xs bg-blue-950/60 border border-blue-700/50 px-2.5 py-1.5 rounded-xl transition" title="Configurar conexión de la nube">
+          <!-- Sincronización JSONBin & Perfil Admin -->
+          <div class="flex items-center space-x-1.5 sm:space-x-2">
+            
+            <!-- Botón Sincronizar Ahora -->
+            <button onclick="app.manualSyncCloud()" id="btnSyncNow" title="Sincronizar cambios con la nube JSONBin" class="flex items-center gap-1.5 bg-blue-800/80 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl border border-blue-600/50 text-xs transition">
+              <i class="fa-solid fa-rotate text-xs" id="syncIcon"></i>
+              <span class="hidden sm:inline font-medium">Sincronizar</span>
+            </button>
+
+            <!-- Indicador Estado Nube JSONBin -->
+            <button onclick="app.setTab('seguridad')" class="flex items-center gap-1.5 text-xs bg-blue-950/60 border border-blue-700/50 px-2.5 py-1.5 rounded-xl transition" title="Configurar JSONBin">
               <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="cloudDot"></span>
-              <span id="cloudStatusText" class="text-[11px] sm:text-xs text-blue-100 font-medium hidden md:inline">Modo Local Seguro</span>
+              <span id="cloudStatusText" class="text-[11px] sm:text-xs text-blue-100 font-medium hidden md:inline">Modo Local</span>
               <i class="fa-solid fa-cloud text-blue-300 text-xs"></i>
             </button>
 
-            <!-- Badge Administrador -->
+            <!-- Badge Administrador & Cerrar Sesión -->
             <div class="flex items-center gap-2 bg-white/10 border border-white/20 px-2 sm:px-3 py-1.5 rounded-xl">
               <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-xs text-white font-bold shadow">
                 <i class="fa-solid fa-user-shield"></i>
               </div>
               <div class="text-left hidden lg:block">
-                <p class="text-xs font-semibold leading-none text-white">Jefe de Almacén</p>
-                <p class="text-[10px] text-emerald-300">Sesión Activa</p>
+                <p class="text-xs font-semibold leading-none text-white">Jefe Almacén</p>
+                <p class="text-[10px] text-emerald-300">Activo</p>
               </div>
-              <!-- Botón Cerrar Sesión -->
               <button onclick="app.logoutAdmin()" title="Cerrar Sesión" class="ml-1 text-slate-300 hover:text-rose-400 p-1 transition flex items-center gap-1 text-xs">
                 <i class="fa-solid fa-power-off text-rose-400"></i>
                 <span class="hidden sm:inline text-rose-200 text-[11px]">Salir</span>
               </button>
             </div>
+
           </div>
         </div>
 
-        <!-- TABS DE NAVEGACIÓN EN ESCRITORIO (Ocultas en celular pequeño para no amontonarse) -->
+        <!-- TABS DE NAVEGACIÓN EN ESCRITORIO -->
         <nav class="hidden sm:flex space-x-1 sm:space-x-2 overflow-x-auto border-t border-white/10 pt-2 pb-2 text-sm font-medium">
           <button onclick="app.setTab('stock')" id="tabBtn-stock" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
             <i class="fa-solid fa-cubes-stacked"></i>
@@ -219,13 +227,24 @@
             <span>Historial & Auditoría</span>
           </button>
           <button onclick="app.setTab('seguridad')" id="tabBtn-seguridad" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
-            <i class="fa-solid fa-shield-halved text-emerald-400"></i>
-            <span>Ciberseguridad & Nube</span>
+            <i class="fa-solid fa-cloud-arrow-up text-emerald-400"></i>
+            <span>Nube JSONBin</span>
           </button>
         </nav>
 
       </div>
     </header>
+
+    <!-- BANNER DE ALERTA DE SINCRONIZACIÓN SI ESTÁ EN MODO LOCAL -->
+    <div id="bannerLocalWarning" class="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between hidden">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Los cambios están guardándose solo en este equipo. Configura JSONBin para ver las entregas sincronizadas en tu celular al instante.</span>
+      </div>
+      <button onclick="app.setTab('seguridad')" class="bg-slate-950 text-white px-3 py-1 rounded-lg text-[11px] font-bold hover:bg-slate-800 transition">
+        Conectar JSONBin
+      </button>
+    </div>
 
     <!-- CONTENIDO PRINCIPAL -->
     <main class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 w-full">
@@ -282,12 +301,10 @@
           <!-- Filtros y Buscador Mobile-First -->
           <div class="flex flex-col gap-2.5 sm:gap-3 mb-4 sm:mb-6">
             <div class="flex flex-col sm:flex-row gap-2.5">
-              <!-- Buscador -->
               <div class="relative flex-1">
                 <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
                 <input type="text" id="searchInput" oninput="app.renderStockView()" placeholder="Buscar insumo (ej: papel, jabón)..." class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm transition">
               </div>
-              <!-- Filtro de Categoría -->
               <select id="categoryFilter" onchange="app.renderStockView()" class="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-xs sm:text-sm text-slate-700">
                 <option value="">Todas las categorías</option>
               </select>
@@ -306,12 +323,12 @@
             </div>
           </div>
 
-          <!-- VISTA MOBILE: Tarjetas Táctiles Especiales para Celular (Ocultas en escritorio) -->
+          <!-- VISTA MOBILE: Tarjetas Táctiles Especiales para Celular -->
           <div class="sm:hidden space-y-2.5" id="stockMobileContainer">
-            <!-- Render dinámico de tarjetas mobile -->
+            <!-- Render dinámico móvil -->
           </div>
 
-          <!-- VISTA DESKTOP: Tabla Tradicional (Visible en pantallas sm o mayores) -->
+          <!-- VISTA DESKTOP: Tabla Tradicional -->
           <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-200">
             <table class="min-w-full divide-y divide-slate-200 text-sm text-left">
               <thead class="bg-slate-50 text-slate-600 font-semibold uppercase text-[11px] tracking-wider">
@@ -330,7 +347,6 @@
             </table>
           </div>
           
-          <!-- Resumen y Leyenda -->
           <div class="mt-4 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-2">
             <p id="stockSummaryText">Mostrando 43 insumos</p>
             <div class="flex items-center gap-3 text-[11px]">
@@ -361,7 +377,6 @@
 
           <form id="formSalida" onsubmit="app.handleRegisterSalida(event)" class="space-y-4 sm:space-y-5">
             
-            <!-- Seleccionar Empleado -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Empleado / Colaborador a Cargo <span class="text-rose-500">*</span>
@@ -376,7 +391,6 @@
               </div>
             </div>
 
-            <!-- Seleccionar Insumo -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Insumo a Entregar <span class="text-rose-500">*</span>
@@ -390,7 +404,6 @@
               </div>
             </div>
 
-            <!-- Cantidad a Entregar -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Cantidad a Entregar <span class="text-rose-500">*</span>
@@ -398,7 +411,6 @@
               <input type="number" id="salidaCantidad" step="any" min="0.01" required placeholder="Ej: 1, 2, 5..." class="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-semibold">
             </div>
 
-            <!-- Timestamp Automático -->
             <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex items-center justify-between text-xs text-slate-600">
               <span class="flex items-center gap-1.5">
                 <i class="fa-solid fa-clock text-blue-600"></i>
@@ -407,16 +419,14 @@
               <span class="font-mono font-bold text-slate-800 text-[11px] sm:text-xs" id="currentLiveTimestamp">Cargando...</span>
             </div>
 
-            <!-- Observaciones -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Observaciones / Motivo <span class="text-slate-400 font-normal">(Opcional)</span>
               </label>
-              <input type="text" id="salidaMotivo" placeholder="Ej: Turno mañana, limpieza piso 2..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
+              <input type="text" id="salidaMotivo" placeholder="Ej: Turno mañana, piso 2 bloque A..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
             </div>
 
-            <!-- Botón Guardar -->
-            <button type="submit" class="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
+            <button type="submit" id="btnConfirmSalida" class="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
               <i class="fa-solid fa-circle-check"></i>
               <span>Confirmar y Guardar Salida</span>
             </button>
@@ -444,7 +454,6 @@
 
           <form id="formEntrada" onsubmit="app.handleRegisterEntrada(event)" class="space-y-4 sm:space-y-5">
             
-            <!-- Seleccionar Insumo -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Insumo a Reabastecer <span class="text-rose-500">*</span>
@@ -463,7 +472,6 @@
               </div>
             </div>
 
-            <!-- Cantidad Entrante -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Cantidad que Ingresa <span class="text-rose-500">*</span>
@@ -471,16 +479,14 @@
               <input type="number" id="entradaCantidad" step="any" min="0.01" required placeholder="Ej: 5, 10, 50..." class="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-semibold">
             </div>
 
-            <!-- Proveedor / Origen -->
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Proveedor o Factura <span class="text-slate-400 font-normal">(Opcional)</span>
               </label>
-              <input type="text" id="entradaMotivo" placeholder="Ej: Compra mensual, remisión #1024..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
+              <input type="text" id="entradaMotivo" placeholder="Ej: Factura #1024, compra mensual..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
             </div>
 
-            <!-- Botón Guardar Entrada -->
-            <button type="submit" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
+            <button type="submit" id="btnConfirmEntrada" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
               <i class="fa-solid fa-plus-circle"></i>
               <span>Confirmar Ingreso al Stock</span>
             </button>
@@ -508,7 +514,7 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="employeeCardsContainer">
-            <!-- Render dinámico de empleados -->
+            <!-- Render dinámico empleados -->
           </div>
 
         </div>
@@ -560,12 +566,12 @@
             </div>
           </div>
 
-          <!-- VISTA MOBILE: Feed de Actividad de Auditoría (Oculto en pantallas grandes) -->
+          <!-- VISTA MOBILE: Feed de Auditoría -->
           <div class="sm:hidden space-y-2.5" id="historyMobileContainer">
             <!-- Render dinámico móvil -->
           </div>
 
-          <!-- VISTA DESKTOP: Tabla de Auditoría (Oculta en celular) -->
+          <!-- VISTA DESKTOP: Tabla de Auditoría -->
           <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-200">
             <table class="min-w-full divide-y divide-slate-200 text-sm text-left">
               <thead class="bg-slate-50 text-slate-600 font-semibold uppercase text-[11px] tracking-wider">
@@ -588,7 +594,7 @@
           <div class="mt-3 text-xs text-slate-400 flex items-center justify-between">
             <p id="historySummaryText">0 registros encontrados</p>
             <span class="flex items-center gap-1 text-emerald-600 font-medium text-[11px]">
-              <i class="fa-solid fa-lock text-[10px]"></i> Registros inmutables protegidos
+              <i class="fa-solid fa-lock text-[10px]"></i> Registros protegidos
             </span>
           </div>
 
@@ -596,45 +602,62 @@
       </section>
 
       <!-- ======================================================== -->
-      <!-- TAB 6: CIBERSEGURIDAD Y AJUSTES                         -->
+      <!-- TAB 6: NUBE JSONBIN & SINCRONIZACIÓN MULTIDISPOSITIVO     -->
       <!-- ======================================================== -->
       <section id="tab-seguridad" class="tab-pane hidden">
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           
-          <!-- Tarjeta Nube -->
+          <!-- Tarjeta JSONBin -->
           <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
                 <i class="fa-solid fa-cloud-arrow-up"></i>
               </div>
               <div>
-                <h2 class="text-base font-bold text-slate-900">Sincronización en la Nube (Supabase)</h2>
-                <p class="text-xs text-slate-500">Conexión con PostgreSQL para sincronizar PC y Celular</p>
+                <h2 class="text-base font-bold text-slate-900">Sincronización en la Nube con JSONBin.io</h2>
+                <p class="text-xs text-slate-500">Permite que lo registrado en el PC se refleje al instante en tu celular</p>
               </div>
             </div>
 
-            <div class="space-y-3">
+            <div class="space-y-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase Project URL</label>
-                <input type="text" id="supabaseUrlInput" placeholder="https://xyzcompany.supabase.co" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  JSONBin Master Key (Clave API) <span class="text-rose-500">*</span>
+                </label>
+                <input type="password" id="jsonbinMasterKeyInput" value="6ab1ca50ac6210605ae79be9" placeholder="$2a$10$..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
+                <p class="text-[11px] text-slate-400 mt-1">Copia la Master Key desde tu cuenta gratuita en <a href="https://jsonbin.io" target="_blank" class="text-blue-600 underline font-semibold">jsonbin.io</a></p>
               </div>
 
               <div>
-                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase Anon Key (Clave Pública)</label>
-                <input type="password" id="supabaseKeyInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  Bin ID <span class="text-slate-400 font-normal">(Si ya tienes uno, pégalo aquí; si no, déjalo vacío y haz clic en "Crear Bin Automático")</span>
+                </label>
+                <input type="text" id="jsonbinBinIdInput" value="6ab1ca50ac6210605ae79be9" placeholder="Ej: 6ab1ca50ac6210605ae79be9" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
               </div>
 
               <div class="flex flex-wrap items-center gap-2 pt-2">
-                <button onclick="app.saveSupabaseConfig()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded-xl transition flex items-center gap-2">
-                  <i class="fa-solid fa-plug"></i>
-                  <span>Conectar Nube</span>
+                <button onclick="app.connectExistingJSONBin()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded-xl transition flex items-center gap-2">
+                  <i class="fa-solid fa-link"></i>
+                  <span>Conectar Bin Existente</span>
                 </button>
-                <button onclick="app.testSupabaseConnection()" class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm rounded-xl transition">
-                  Probar Conexión
+                
+                <button onclick="app.autoCreateJSONBin()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-sm transition flex items-center gap-2">
+                  <i class="fa-solid fa-cloud-arrow-up"></i>
+                  <span>Crear Bin en la Nube con los 43 Insumos</span>
                 </button>
-                <button onclick="app.disconnectSupabase()" class="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs rounded-xl transition">
-                  Modo Local
+
+                <button onclick="app.disconnectJSONBin()" class="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs rounded-xl transition">
+                  Desconectar
                 </button>
+              </div>
+
+              <!-- Estado de Conexión -->
+              <div id="jsonbinStatusBox" class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                <p class="font-semibold text-slate-700 flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full bg-slate-400" id="jsonbinStatusDot"></span>
+                  <span id="jsonbinStatusTitle">Estado: No conectado</span>
+                </p>
+                <p class="text-slate-500 mt-1 text-[11px]" id="jsonbinStatusDesc">Configura tu Master Key para activar la sincronización permanente en tiempo real.</p>
               </div>
             </div>
           </div>
