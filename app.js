@@ -78,6 +78,8 @@ class InventoryApp {
     this.activeTab = 'stock';
     this.isAdminAuthenticated = false;
     this.isSyncing = false;
+    this.adminUser = 'admin';
+    this.adminPass = 'admin1234';
 
     this.init();
   }
@@ -109,6 +111,8 @@ class InventoryApp {
         this.items = parsed.items || [...INITIAL_INVENTORY_SEED];
         this.employees = parsed.employees || [...INITIAL_EMPLOYEES_SEED];
         this.movements = parsed.movements || [];
+        this.adminUser = parsed.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+        this.adminPass = parsed.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
         this.lastUpdated = parsed.lastUpdated || null;
       } catch (e) {
         this.loadDefaultSeeds();
@@ -118,10 +122,10 @@ class InventoryApp {
     }
 
     if (!localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER)) {
-      localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, 'admin');
+      localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, this.adminUser || 'admin');
     }
     if (!localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS)) {
-      localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, 'admin1234');
+      localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, this.adminPass || 'admin1234');
     }
   }
 
@@ -129,6 +133,8 @@ class InventoryApp {
     this.items = [...INITIAL_INVENTORY_SEED];
     this.employees = [...INITIAL_EMPLOYEES_SEED];
     this.movements = [];
+    this.adminUser = localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+    this.adminPass = localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
     this.lastUpdated = new Date().toISOString();
     this.saveLocalCacheOnly();
   }
@@ -138,9 +144,13 @@ class InventoryApp {
       items: this.items,
       employees: this.employees,
       movements: this.movements,
+      adminUser: this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin',
+      adminPass: this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234',
       lastUpdated: this.lastUpdated || new Date().toISOString()
     };
     localStorage.setItem(this.STORAGE_KEYS.STATE, JSON.stringify(state));
+    localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, state.adminUser);
+    localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, state.adminPass);
   }
 
   // Guardar en Local + Nube JSONBin simultáneamente
@@ -250,6 +260,14 @@ class InventoryApp {
         this.items = record.items;
         this.employees = record.employees || [];
         this.movements = record.movements || [];
+        if (record.adminUser) {
+          this.adminUser = record.adminUser;
+          localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, record.adminUser);
+        }
+        if (record.adminPass) {
+          this.adminPass = record.adminPass;
+          localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, record.adminPass);
+        }
         this.lastUpdated = record.lastUpdated || new Date().toISOString();
         this.saveLocalCacheOnly();
         this.renderAll();
@@ -294,6 +312,8 @@ class InventoryApp {
         items: this.items,
         employees: this.employees,
         movements: this.movements,
+        adminUser: this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin',
+        adminPass: this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234',
         lastUpdated: this.lastUpdated || new Date().toISOString()
       };
 
@@ -442,6 +462,14 @@ class InventoryApp {
         this.items = record.items;
         this.employees = record.employees || [];
         this.movements = record.movements || [];
+        if (record.adminUser) {
+          this.adminUser = record.adminUser;
+          localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, record.adminUser);
+        }
+        if (record.adminPass) {
+          this.adminPass = record.adminPass;
+          localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, record.adminPass);
+        }
         this.lastUpdated = record.lastUpdated || new Date().toISOString();
         this.saveLocalCacheOnly();
         this.renderAll();
@@ -533,14 +561,50 @@ class InventoryApp {
     this.updateCloudUI();
   }
 
-  handleLoginSubmit(e) {
+  async handleLoginSubmit(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value.trim();
     const rememberMe = document.getElementById('loginRememberMe').checked;
 
-    const savedUser = localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
-    const savedPass = localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
+    let savedUser = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+    let savedPass = this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
+
+    // Si localmente no coincide, consultar a la nube JSONBin por si fue cambiada recientemente desde otro dispositivo (ej: desde el PC)
+    if (username !== savedUser || password !== savedPass) {
+      if (this.hasJSONBinConfig()) {
+        try {
+          const binId = this.getJSONBinId();
+          const key = this.getJSONBinKey();
+          const headers = {};
+          if (key) {
+            headers['X-Master-Key'] = key;
+            headers['X-Access-Key'] = key;
+          }
+          let res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers });
+          if (!res.ok && (res.status === 401 || res.status === 403)) {
+            res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`);
+          }
+          if (res.ok) {
+            const data = await res.json();
+            if (data.record) {
+              if (data.record.adminUser) {
+                savedUser = data.record.adminUser;
+                this.adminUser = savedUser;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, savedUser);
+              }
+              if (data.record.adminPass) {
+                savedPass = data.record.adminPass;
+                this.adminPass = savedPass;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, savedPass);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Aviso al verificar credenciales en la nube:', err);
+        }
+      }
+    }
 
     if (username === savedUser && password === savedPass) {
       const token = 'token_auth_' + Date.now();
@@ -564,7 +628,7 @@ class InventoryApp {
       Swal.fire({
         icon: 'error',
         title: 'Credenciales Incorrectas',
-        text: 'El usuario o la contraseña no son correctos.',
+        text: 'El usuario o la contraseña no coinciden con las registradas.',
         confirmButtonColor: '#1e40af'
       });
     }
@@ -632,13 +696,18 @@ class InventoryApp {
       if (!newUser) return Swal.fire({ icon: 'warning', text: 'El usuario no puede estar vacío.' });
       if (!newPass || newPass.length < 6) return Swal.fire({ icon: 'warning', text: 'La contraseña debe tener al menos 6 caracteres.' });
 
+      this.adminUser = newUser;
+      this.adminPass = newPass;
       localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, newUser);
       localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, newPass);
 
+      // Guardar localmente y subir de inmediato a la nube JSONBin
+      await this.persistState(true);
+
       Swal.fire({
         icon: 'success',
-        title: 'Credenciales Actualizadas',
-        text: 'Los nuevos datos de acceso se han guardado exitosamente.'
+        title: 'Credenciales Sincronizadas',
+        text: 'El nuevo usuario y contraseña se han guardado y sincronizado en la nube para todos tus dispositivos.'
       });
     }
   }
