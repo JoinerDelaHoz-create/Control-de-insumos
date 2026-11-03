@@ -850,6 +850,9 @@ class InventoryApp {
               <button onclick="app.editItem('${item.id}')" title="Editar" class="p-1 text-slate-400 hover:text-blue-600 transition">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
+              <button onclick="app.deleteItem('${item.id}')" title="Eliminar del catálogo" class="p-1 text-slate-400 hover:text-rose-600 transition">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
             </div>
           </td>
         </tr>
@@ -892,9 +895,14 @@ class InventoryApp {
                   </span>
                 </div>
               </div>
-              <button onclick="app.editItem('${item.id}')" class="p-1 text-slate-400 hover:text-blue-600 text-xs">
-                <i class="fa-solid fa-pen"></i>
-              </button>
+              <div class="flex items-center gap-1">
+                <button onclick="app.editItem('${item.id}')" class="p-1 text-slate-400 hover:text-blue-600 text-xs" title="Editar">
+                  <i class="fa-solid fa-pen"></i>
+                </button>
+                <button onclick="app.deleteItem('${item.id}')" class="p-1 text-slate-400 hover:text-rose-600 text-xs" title="Eliminar">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
             </div>
 
             <div class="flex items-center justify-between py-2 border-y border-slate-100 my-2">
@@ -1424,6 +1432,8 @@ class InventoryApp {
     document.getElementById('modalItemId').value = '';
     document.getElementById('formNewItem').reset();
     document.getElementById('modalItemMinStock').value = '2';
+    const deleteBtn = document.getElementById('btnModalDeleteItem');
+    if (deleteBtn) deleteBtn.classList.add('hidden');
     document.getElementById('modalNewItem').classList.remove('hidden');
     document.getElementById('modalItemNombre').focus();
   }
@@ -1444,7 +1454,55 @@ class InventoryApp {
     document.getElementById('modalItemStock').value = item.stock;
     document.getElementById('modalItemMinStock').value = item.minStock || 2;
     
+    const deleteBtn = document.getElementById('btnModalDeleteItem');
+    if (deleteBtn) deleteBtn.classList.remove('hidden');
+
     document.getElementById('modalNewItem').classList.remove('hidden');
+  }
+
+  async deleteItem(id) {
+    const item = this.items.find(i => i.id === id);
+    if (!item) return;
+
+    const confirm = await Swal.fire({
+      title: '¿Eliminar Insumo?',
+      html: `
+        <div class="text-left text-xs sm:text-sm bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200">
+          <p>¿Estás seguro de que deseas eliminar <strong>"${this.escapeHtml(item.nombre)}"</strong> del catálogo?</p>
+          <p class="text-xs text-slate-500 mt-2">Nota de auditoría: los registros históricos de entregas pasadas de este insumo se conservarán intactos.</p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      confirmButtonColor: '#e11d48',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (confirm.isConfirmed) {
+      this.items = this.items.filter(i => i.id !== id);
+      await this.persistState(true);
+      this.populateCategoryFilter();
+      this.renderStockView();
+      this.populateSelects();
+      this.updateStats();
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Insumo Eliminado',
+        text: `"${item.nombre}" se ha eliminado del inventario y de la nube.`,
+        timer: 1500,
+        showConfirmButton: false
+      });
+    }
+  }
+
+  deleteItemFromModal() {
+    const id = document.getElementById('modalItemId').value;
+    if (id) {
+      this.closeNewItemModal();
+      this.deleteItem(id);
+    }
   }
 
   async handleSaveItem(e) {

@@ -790,6 +790,9 @@
         </div>
 
         <div class="flex gap-2 pt-2">
+          <button type="button" id="btnModalDeleteItem" onclick="app.deleteItemFromModal()" title="Eliminar este insumo" class="hidden py-2.5 px-3.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
           <button type="button" onclick="app.closeNewItemModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl transition">Cancelar</button>
           <button type="submit" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition">Guardar Insumo</button>
         </div>
