@@ -276,6 +276,7 @@ class InventoryApp {
         this.saveLocalCacheOnly();
         this.renderAll();
         this.updateLoginHint();
+        this.updateAdminBadge();
       }
 
       this.updateCloudUI();
@@ -597,6 +598,7 @@ class InventoryApp {
     this.renderAll();
     this.setTab('stock');
     this.updateCloudUI();
+    this.updateAdminBadge();
   }
 
   async handleLoginSubmit(e) {
@@ -695,6 +697,14 @@ class InventoryApp {
     }
   }
 
+  updateAdminBadge() {
+    const nameEl = document.getElementById('adminNameDisplay');
+    if (nameEl) {
+      const user = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+      nameEl.textContent = user.charAt(0).toUpperCase() + user.slice(1);
+    }
+  }
+
   togglePasswordVisibility() {
     const input = document.getElementById('loginPassword');
     const icon = document.getElementById('togglePasswordIcon');
@@ -775,6 +785,7 @@ class InventoryApp {
       await this.pushToJSONBin(true);
 
       this.updateLoginHint();
+      this.updateAdminBadge();
 
       Swal.fire({
         icon: 'success',
