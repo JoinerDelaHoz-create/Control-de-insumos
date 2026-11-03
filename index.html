@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Control de Insumos | Universidad Metropolitana</title>
+  
+  <!-- PWA & Mobile Meta -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1e3a8a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2897/2897785.png">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+              950: '#0f172a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- SweetAlert2 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
+  <!-- SheetJS CDN (Excel Export) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    /* Prevención de desbordamientos en móviles */
+    html, body {
+      overflow-x: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    
+    /* Efectos de tarjeta mobile */
+    .mobile-card {
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .mobile-card:active {
+      transform: scale(0.985);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-20 sm:pb-8">
+
+  <!-- ======================================================== -->
+  <!-- 1. PANTALLA DE INICIO DE SESIÓN PROFESIONAL (ADMIN LOGIN) -->
+  <!-- ======================================================== -->
+  <div id="viewLogin" class="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 fixed inset-0 z-50">
+    <div class="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-6 sm:p-8">
+      
+      <!-- Logo y Encabezado Institucional -->
+      <div class="text-center mb-6">
+        <div class="w-20 h-20 bg-gradient-to-tr from-blue-700 to-indigo-600 rounded-3xl mx-auto flex items-center justify-center text-white text-3xl shadow-lg shadow-blue-600/30 border border-white/30 mb-3">
+          <i class="fa-solid fa-boxes-stacked"></i>
+        </div>
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-2">
+          <i class="fa-solid fa-shield-halved text-[10px]"></i>
+          <span>Portal Administrativo Seguro</span>
+        </div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Control de Insumos</h1>
+        <p class="text-xs text-slate-500 font-medium">Universidad Metropolitana &bull; Almacén Central</p>
+      </div>
+
+      <!-- Formulario de Login -->
+      <form id="formFullLogin" onsubmit="app.handleLoginSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+            Usuario o Correo Institucional
+          </label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i class="fa-solid fa-user"></i>
+            </span>
+            <input type="text" id="loginUsername" required value="admin" placeholder="admin" class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none transition">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+            Contraseña / PIN de Administrador
+          </label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i class="fa-solid fa-lock"></i>
+            </span>
+            <input type="password" id="loginPassword" required value="admin1234" placeholder="••••••••" class="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none transition">
+            <button type="button" onclick="app.togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600">
+              <i class="fa-solid fa-eye" id="togglePasswordIcon"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-slate-500 pt-1">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="loginRememberMe" checked class="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500">
+            <span>Recordar sesión</span>
+          </label>
+          <span class="text-blue-600 font-medium">Acceso Jefe</span>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-bold rounded-2xl shadow-lg shadow-blue-700/30 text-sm transition transform active:scale-95 flex items-center justify-center gap-2 mt-2">
+          <span>Ingresar al Sistema</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </form>
+
+      <!-- Credenciales de prueba -->
+      <div class="mt-6 pt-5 border-t border-slate-100 text-center text-xs text-slate-400">
+        <p>Credenciales de acceso inicial:</p>
+        <p class="font-mono text-slate-700 font-semibold mt-0.5">Usuario: <span class="text-blue-700">admin</span> &bull; Clave: <span class="text-blue-700">admin1234</span></p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- 2. APLICACIÓN PRINCIPAL (VISIBLE TRAS LOGIN)             -->
+  <!-- ======================================================== -->
+  <div id="viewApp" class="hidden flex-1 flex flex-col">
+
+    <!-- HEADER INSTITUCIONAL -->
+    <header class="bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-900 text-white shadow-xl sticky top-0 z-40">
+      <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        
+        <!-- Barra Superior -->
+        <div class="flex items-center justify-between h-16 sm:h-20">
+          
+          <!-- Logo & Título -->
+          <div class="flex items-center space-x-2.5 sm:space-x-3">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 bg-white/10 rounded-xl flex items-center justify-center border border-white/20 shadow-inner shrink-0">
+              <i class="fa-solid fa-boxes-stacked text-xl sm:text-2xl text-blue-300"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5 sm:gap-2">
+                <h1 class="text-sm sm:text-lg font-bold tracking-tight text-white leading-tight">Control Insumos</h1>
+                <span class="text-[10px] sm:text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.2 rounded-full font-medium">U.Metro</span>
+              </div>
+              <p class="text-[11px] sm:text-xs text-blue-200 truncate">Almacén Central</p>
+            </div>
+          </div>
+
+          <!-- Perfil Admin & Cerrar Sesión -->
+          <div class="flex items-center space-x-1.5 sm:space-x-3">
+            <!-- Indicador Nube / Local -->
+            <button onclick="app.setTab('seguridad')" class="flex items-center gap-1.5 text-xs bg-blue-950/60 border border-blue-700/50 px-2.5 py-1.5 rounded-xl transition" title="Configurar conexión de la nube">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="cloudDot"></span>
+              <span id="cloudStatusText" class="text-[11px] sm:text-xs text-blue-100 font-medium hidden md:inline">Modo Local Seguro</span>
+              <i class="fa-solid fa-cloud text-blue-300 text-xs"></i>
+            </button>
+
+            <!-- Badge Administrador -->
+            <div class="flex items-center gap-2 bg-white/10 border border-white/20 px-2 sm:px-3 py-1.5 rounded-xl">
+              <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-xs text-white font-bold shadow">
+                <i class="fa-solid fa-user-shield"></i>
+              </div>
+              <div class="text-left hidden lg:block">
+                <p class="text-xs font-semibold leading-none text-white">Jefe de Almacén</p>
+                <p class="text-[10px] text-emerald-300">Sesión Activa</p>
+              </div>
+              <!-- Botón Cerrar Sesión -->
+              <button onclick="app.logoutAdmin()" title="Cerrar Sesión" class="ml-1 text-slate-300 hover:text-rose-400 p-1 transition flex items-center gap-1 text-xs">
+                <i class="fa-solid fa-power-off text-rose-400"></i>
+                <span class="hidden sm:inline text-rose-200 text-[11px]">Salir</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABS DE NAVEGACIÓN EN ESCRITORIO (Ocultas en celular pequeño para no amontonarse) -->
+        <nav class="hidden sm:flex space-x-1 sm:space-x-2 overflow-x-auto border-t border-white/10 pt-2 pb-2 text-sm font-medium">
+          <button onclick="app.setTab('stock')" id="tabBtn-stock" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-cubes-stacked"></i>
+            <span>Stock Actual</span>
+            <span id="badgeStockTotal" class="bg-blue-500/40 text-xs px-2 py-0.5 rounded-full font-mono">43</span>
+          </button>
+          <button onclick="app.setTab('salidas')" id="tabBtn-salidas" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-hand-holding-hand text-amber-400"></i>
+            <span>Entregar Insumo</span>
+          </button>
+          <button onclick="app.setTab('entradas')" id="tabBtn-entradas" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-truck-ramp-box text-emerald-400"></i>
+            <span>Reabastecer</span>
+          </button>
+          <button onclick="app.setTab('personal')" id="tabBtn-personal" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-users text-cyan-300"></i>
+            <span>Personal a Cargo</span>
+          </button>
+          <button onclick="app.setTab('historial')" id="tabBtn-historial" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-clock-rotate-left text-violet-300"></i>
+            <span>Historial & Auditoría</span>
+          </button>
+          <button onclick="app.setTab('seguridad')" id="tabBtn-seguridad" class="nav-tab px-3 py-2 rounded-lg flex items-center gap-2 text-blue-100 hover:bg-white/10 transition whitespace-nowrap">
+            <i class="fa-solid fa-shield-halved text-emerald-400"></i>
+            <span>Ciberseguridad & Nube</span>
+          </button>
+        </nav>
+
+      </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 w-full">
+
+      <!-- TARJETAS DE RESUMEN MÉTRICO -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mb-4 sm:mb-6">
+        <div class="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 flex items-center gap-3">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+            <i class="fa-solid fa-list-check"></i>
+          </div>
+          <div>
+            <p class="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Ítems</p>
+            <p class="text-lg sm:text-2xl font-bold text-slate-900" id="statTotalItems">43</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 flex items-center gap-3">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div>
+            <p class="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Crítico (&le;2)</p>
+            <p class="text-lg sm:text-2xl font-bold text-rose-600" id="statLowStock">0</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 flex items-center gap-3">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+            <i class="fa-solid fa-clipboard-user"></i>
+          </div>
+          <div>
+            <p class="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Personal</p>
+            <p class="text-lg sm:text-2xl font-bold text-slate-900" id="statTotalEmployees">0</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 flex items-center gap-3">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+            <i class="fa-solid fa-receipt"></i>
+          </div>
+          <div>
+            <p class="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Entregas</p>
+            <p class="text-lg sm:text-2xl font-bold text-slate-900" id="statTotalDeliveries">0</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- TAB 1: STOCK ACTUAL                                      -->
+      <!-- ======================================================== -->
+      <section id="tab-stock" class="tab-pane">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-6 mb-4">
+          
+          <!-- Filtros y Buscador Mobile-First -->
+          <div class="flex flex-col gap-2.5 sm:gap-3 mb-4 sm:mb-6">
+            <div class="flex flex-col sm:flex-row gap-2.5">
+              <!-- Buscador -->
+              <div class="relative flex-1">
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
+                <input type="text" id="searchInput" oninput="app.renderStockView()" placeholder="Buscar insumo (ej: papel, jabón)..." class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm transition">
+              </div>
+              <!-- Filtro de Categoría -->
+              <select id="categoryFilter" onchange="app.renderStockView()" class="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-xs sm:text-sm text-slate-700">
+                <option value="">Todas las categorías</option>
+              </select>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="flex items-center gap-2">
+              <button onclick="app.openNewItemModal()" class="flex-1 sm:flex-none px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded-xl shadow-sm transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-plus"></i>
+                <span>Nuevo Insumo</span>
+              </button>
+              <button onclick="app.exportStockToExcel()" title="Descargar Catálogo a Excel" class="px-3.5 py-2.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 border border-slate-200 rounded-xl text-xs sm:text-sm transition flex items-center gap-1.5">
+                <i class="fa-solid fa-file-excel text-emerald-600"></i>
+                <span>Excel</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- VISTA MOBILE: Tarjetas Táctiles Especiales para Celular (Ocultas en escritorio) -->
+          <div class="sm:hidden space-y-2.5" id="stockMobileContainer">
+            <!-- Render dinámico de tarjetas mobile -->
+          </div>
+
+          <!-- VISTA DESKTOP: Tabla Tradicional (Visible en pantallas sm o mayores) -->
+          <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200 text-sm text-left">
+              <thead class="bg-slate-50 text-slate-600 font-semibold uppercase text-[11px] tracking-wider">
+                <tr>
+                  <th class="py-3 px-4">Insumo</th>
+                  <th class="py-3 px-4">Categoría</th>
+                  <th class="py-3 px-4 text-center">Stock</th>
+                  <th class="py-3 px-4 text-center">Unidad</th>
+                  <th class="py-3 px-4 text-center">Estado</th>
+                  <th class="py-3 px-4 text-right">Acciones Rápidas</th>
+                </tr>
+              </thead>
+              <tbody id="stockTableBody" class="divide-y divide-slate-100">
+                <!-- Render dinámico desktop -->
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Resumen y Leyenda -->
+          <div class="mt-4 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-2">
+            <p id="stockSummaryText">Mostrando 43 insumos</p>
+            <div class="flex items-center gap-3 text-[11px]">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Óptimo</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Bajo (&le;5)</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Crítico (&le;2)</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 2: ENTREGAR INSUMO (SALIDAS A EMPLEADOS)            -->
+      <!-- ======================================================== -->
+      <section id="tab-salidas" class="tab-pane hidden">
+        <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-8">
+          
+          <div class="flex items-center gap-3 border-b border-slate-100 pb-3 sm:pb-4 mb-4 sm:mb-6">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+              <i class="fa-solid fa-hand-holding-hand"></i>
+            </div>
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Registrar Entrega de Insumo</h2>
+              <p class="text-xs text-slate-500">Anota a qué empleado se le entrega con fecha y hora exacta</p>
+            </div>
+          </div>
+
+          <form id="formSalida" onsubmit="app.handleRegisterSalida(event)" class="space-y-4 sm:space-y-5">
+            
+            <!-- Seleccionar Empleado -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Empleado / Colaborador a Cargo <span class="text-rose-500">*</span>
+              </label>
+              <div class="flex gap-2">
+                <select id="salidaEmpleadoSelect" required class="flex-1 px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-medium">
+                  <option value="">-- Selecciona el empleado --</option>
+                </select>
+                <button type="button" onclick="app.openNewEmployeeModal()" title="Agregar nuevo empleado" class="px-3 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border border-slate-200 rounded-xl text-slate-600 transition">
+                  <i class="fa-solid fa-user-plus"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Seleccionar Insumo -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Insumo a Entregar <span class="text-rose-500">*</span>
+              </label>
+              <select id="salidaInsumoSelect" onchange="app.handleSalidaInsumoChange()" required class="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-medium">
+                <option value="">-- Selecciona el insumo --</option>
+              </select>
+              <div id="salidaStockInfo" class="hidden mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900">
+                <span>Stock disponible: <strong id="salidaStockAvailable" class="text-blue-700 text-sm">0</strong></span>
+                <span id="salidaStockUnit" class="text-blue-600 font-medium"></span>
+              </div>
+            </div>
+
+            <!-- Cantidad a Entregar -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Cantidad a Entregar <span class="text-rose-500">*</span>
+              </label>
+              <input type="number" id="salidaCantidad" step="any" min="0.01" required placeholder="Ej: 1, 2, 5..." class="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-semibold">
+            </div>
+
+            <!-- Timestamp Automático -->
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 flex items-center justify-between text-xs text-slate-600">
+              <span class="flex items-center gap-1.5">
+                <i class="fa-solid fa-clock text-blue-600"></i>
+                <span>Fecha y Hora de Entrega:</span>
+              </span>
+              <span class="font-mono font-bold text-slate-800 text-[11px] sm:text-xs" id="currentLiveTimestamp">Cargando...</span>
+            </div>
+
+            <!-- Observaciones -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Observaciones / Motivo <span class="text-slate-400 font-normal">(Opcional)</span>
+              </label>
+              <input type="text" id="salidaMotivo" placeholder="Ej: Turno mañana, limpieza piso 2..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
+            </div>
+
+            <!-- Botón Guardar -->
+            <button type="submit" class="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>Confirmar y Guardar Salida</span>
+            </button>
+
+          </form>
+
+        </div>
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 3: REABASTECER (ENTRADAS DE INSUMOS)                -->
+      <!-- ======================================================== -->
+      <section id="tab-entradas" class="tab-pane hidden">
+        <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-8">
+          
+          <div class="flex items-center gap-3 border-b border-slate-100 pb-3 sm:pb-4 mb-4 sm:mb-6">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg sm:text-xl shrink-0">
+              <i class="fa-solid fa-truck-ramp-box"></i>
+            </div>
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Registrar Entrada / Reabastecimiento</h2>
+              <p class="text-xs text-slate-500">Ingresa nuevo inventario recibido al stock general</p>
+            </div>
+          </div>
+
+          <form id="formEntrada" onsubmit="app.handleRegisterEntrada(event)" class="space-y-4 sm:space-y-5">
+            
+            <!-- Seleccionar Insumo -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Insumo a Reabastecer <span class="text-rose-500">*</span>
+              </label>
+              <div class="flex gap-2">
+                <select id="entradaInsumoSelect" onchange="app.handleEntradaInsumoChange()" required class="flex-1 px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-medium">
+                  <option value="">-- Selecciona el insumo --</option>
+                </select>
+                <button type="button" onclick="app.openNewItemModal()" title="Crear un nuevo insumo" class="px-3 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border border-slate-200 rounded-xl text-slate-600 transition">
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+              </div>
+              <div id="entradaStockInfo" class="hidden mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
+                <span>Stock actual: <strong id="entradaStockAvailable" class="text-emerald-700 text-sm">0</strong></span>
+                <span id="entradaStockUnit" class="text-emerald-700 font-medium"></span>
+              </div>
+            </div>
+
+            <!-- Cantidad Entrante -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Cantidad que Ingresa <span class="text-rose-500">*</span>
+              </label>
+              <input type="number" id="entradaCantidad" step="any" min="0.01" required placeholder="Ej: 5, 10, 50..." class="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm font-semibold">
+            </div>
+
+            <!-- Proveedor / Origen -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Proveedor o Factura <span class="text-slate-400 font-normal">(Opcional)</span>
+              </label>
+              <input type="text" id="entradaMotivo" placeholder="Ej: Compra mensual, remisión #1024..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none text-sm">
+            </div>
+
+            <!-- Botón Guardar Entrada -->
+            <button type="submit" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md text-sm transition transform active:scale-95 flex items-center justify-center gap-2">
+              <i class="fa-solid fa-plus-circle"></i>
+              <span>Confirmar Ingreso al Stock</span>
+            </button>
+
+          </form>
+
+        </div>
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 4: PERSONAL A CARGO (EMPLEADOS)                     -->
+      <!-- ======================================================== -->
+      <section id="tab-personal" class="tab-pane hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-6 mb-4">
+          
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 sm:mb-6">
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Personal a Cargo</h2>
+              <p class="text-xs text-slate-500">Empleados autorizados para recibir suministros</p>
+            </div>
+            <button onclick="app.openNewEmployeeModal()" class="w-full sm:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded-xl shadow-sm transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-user-plus"></i>
+              <span>Añadir Empleado</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="employeeCardsContainer">
+            <!-- Render dinámico de empleados -->
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 5: HISTORIAL Y AUDITORÍA POR PERSONA                 -->
+      <!-- ======================================================== -->
+      <section id="tab-historial" class="tab-pane hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-6 mb-4">
+          
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-slate-100">
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Historial & Auditoría</h2>
+              <p class="text-xs text-slate-500">Consulta y verifica entregas con marca temporal</p>
+            </div>
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+              <button onclick="app.exportHistoryToExcel()" class="flex-1 sm:flex-none px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-file-excel"></i>
+                <span>Descargar Excel</span>
+              </button>
+              <button onclick="window.print()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs transition" title="Imprimir reporte">
+                <i class="fa-solid fa-print"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Filtros de Búsqueda -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Filtrar por Empleado</label>
+              <select id="historialFilterEmpleado" onchange="app.renderHistoryView()" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none font-medium">
+                <option value="">Todos los empleados</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Tipo de Movimiento</label>
+              <select id="historialFilterTipo" onchange="app.renderHistoryView()" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none">
+                <option value="">Todos</option>
+                <option value="SALIDA">Solo Salidas (Entregas)</option>
+                <option value="ENTRADA">Solo Entradas (Reabastecimientos)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Buscar por Insumo</label>
+              <input type="text" id="historialSearchInsumo" oninput="app.renderHistoryView()" placeholder="Ej: Jabón, Tapabocas..." class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none">
+            </div>
+          </div>
+
+          <!-- VISTA MOBILE: Feed de Actividad de Auditoría (Oculto en pantallas grandes) -->
+          <div class="sm:hidden space-y-2.5" id="historyMobileContainer">
+            <!-- Render dinámico móvil -->
+          </div>
+
+          <!-- VISTA DESKTOP: Tabla de Auditoría (Oculta en celular) -->
+          <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200 text-sm text-left">
+              <thead class="bg-slate-50 text-slate-600 font-semibold uppercase text-[11px] tracking-wider">
+                <tr>
+                  <th class="py-3 px-4">Fecha y Hora</th>
+                  <th class="py-3 px-4 text-center">Tipo</th>
+                  <th class="py-3 px-4">Empleado / Receptor</th>
+                  <th class="py-3 px-4">Insumo</th>
+                  <th class="py-3 px-4 text-center">Cantidad</th>
+                  <th class="py-3 px-4">Observaciones</th>
+                  <th class="py-3 px-4 text-center">Auditoría</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody" class="divide-y divide-slate-100 font-normal">
+                <!-- Render dinámico desktop -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="mt-3 text-xs text-slate-400 flex items-center justify-between">
+            <p id="historySummaryText">0 registros encontrados</p>
+            <span class="flex items-center gap-1 text-emerald-600 font-medium text-[11px]">
+              <i class="fa-solid fa-lock text-[10px]"></i> Registros inmutables protegidos
+            </span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 6: CIBERSEGURIDAD Y AJUSTES                         -->
+      <!-- ======================================================== -->
+      <section id="tab-seguridad" class="tab-pane hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          
+          <!-- Tarjeta Nube -->
+          <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+              </div>
+              <div>
+                <h2 class="text-base font-bold text-slate-900">Sincronización en la Nube (Supabase)</h2>
+                <p class="text-xs text-slate-500">Conexión con PostgreSQL para sincronizar PC y Celular</p>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase Project URL</label>
+                <input type="text" id="supabaseUrlInput" placeholder="https://xyzcompany.supabase.co" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Supabase Anon Key (Clave Pública)</label>
+                <input type="password" id="supabaseKeyInput" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none">
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2 pt-2">
+                <button onclick="app.saveSupabaseConfig()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded-xl transition flex items-center gap-2">
+                  <i class="fa-solid fa-plug"></i>
+                  <span>Conectar Nube</span>
+                </button>
+                <button onclick="app.testSupabaseConnection()" class="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm rounded-xl transition">
+                  Probar Conexión
+                </button>
+                <button onclick="app.disconnectSupabase()" class="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs rounded-xl transition">
+                  Modo Local
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Respaldos y Contraseña -->
+          <div class="space-y-4">
+            <!-- Respaldos -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+              <h3 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-floppy-disk text-indigo-600"></i>
+                <span>Copias de Seguridad</span>
+              </h3>
+              <p class="text-xs text-slate-500 mb-3">Descarga tus datos completos en un clic.</p>
+              
+              <div class="space-y-2">
+                <button onclick="app.downloadFullBackupJSON()" class="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs rounded-xl border border-indigo-200 transition flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-download"></i>
+                  <span>Descargar Backup JSON</span>
+                </button>
+                <button onclick="app.exportAllToExcel()" class="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-xl border border-emerald-200 transition flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-file-excel"></i>
+                  <span>Descargar Excel Completo</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Cambiar Clave -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+              <h3 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-key text-amber-500"></i>
+                <span>Contraseña Admin</span>
+              </h3>
+              <p class="text-xs text-slate-500 mb-3">Cambia la clave de acceso de Administrador.</p>
+              
+              <button onclick="app.promptChangeAdminPassword()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-lock"></i>
+                <span>Cambiar Contraseña</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ======================================================== -->
+    <!-- 3. BARRA DE NAVEGACIÓN INFERIOR PARA MÓVIL (TIPO APP)    -->
+    <!-- ======================================================== -->
+    <nav class="sm:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 z-40 flex justify-around items-center shadow-lg">
+      <button onclick="app.setTab('stock')" id="mobNav-stock" class="flex flex-col items-center justify-center text-blue-700 py-1 px-2 rounded-xl transition">
+        <i class="fa-solid fa-cubes-stacked text-base"></i>
+        <span class="text-[10px] font-semibold mt-0.5">Stock</span>
+      </button>
+      <button onclick="app.setTab('salidas')" id="mobNav-salidas" class="flex flex-col items-center justify-center text-slate-400 py-1 px-2 rounded-xl transition">
+        <i class="fa-solid fa-hand-holding-hand text-base text-amber-500"></i>
+        <span class="text-[10px] font-semibold mt-0.5">Entregar</span>
+      </button>
+      <button onclick="app.setTab('entradas')" id="mobNav-entradas" class="flex flex-col items-center justify-center text-slate-400 py-1 px-2 rounded-xl transition">
+        <i class="fa-solid fa-truck-ramp-box text-base text-emerald-500"></i>
+        <span class="text-[10px] font-semibold mt-0.5">Entrada</span>
+      </button>
+      <button onclick="app.setTab('personal')" id="mobNav-personal" class="flex flex-col items-center justify-center text-slate-400 py-1 px-2 rounded-xl transition">
+        <i class="fa-solid fa-users text-base text-cyan-600"></i>
+        <span class="text-[10px] font-semibold mt-0.5">Personal</span>
+      </button>
+      <button onclick="app.setTab('historial')" id="mobNav-historial" class="flex flex-col items-center justify-center text-slate-400 py-1 px-2 rounded-xl transition">
+        <i class="fa-solid fa-clock-rotate-left text-base text-violet-500"></i>
+        <span class="text-[10px] font-semibold mt-0.5">Auditoría</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODALES DEL SISTEMA                                      -->
+  <!-- ======================================================== -->
+
+  <!-- Modal: Nuevo Insumo -->
+  <div id="modalNewItem" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+      <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2" id="modalItemTitle">
+          <i class="fa-solid fa-box text-blue-600"></i>
+          <span>Nuevo Insumo</span>
+        </h3>
+        <button onclick="app.closeNewItemModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="formNewItem" onsubmit="app.handleSaveItem(event)" class="space-y-3.5">
+        <input type="hidden" id="modalItemId">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Nombre del Insumo <span class="text-rose-500">*</span></label>
+          <input type="text" id="modalItemNombre" required placeholder="Ej: Jabón en barra, Guantes de látex..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Categoría <span class="text-rose-500">*</span></label>
+            <input type="text" id="modalItemCategoria" list="categoriaOptions" required placeholder="Aseo, EPP..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+            <datalist id="categoriaOptions">
+              <option value="Aseo y Detergentes"></option>
+              <option value="Herramientas de Aseo"></option>
+              <option value="Químicos y Desinfectantes"></option>
+              <option value="Bolsas de Residuos"></option>
+              <option value="Papelería e Higiene"></option>
+              <option value="Seguridad y EPP"></option>
+              <option value="Mantenimiento y Ferretería"></option>
+            </datalist>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Unidad de Medida</label>
+            <input type="text" id="modalItemUnidad" placeholder="Unidades, Galones..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Stock Inicial <span class="text-rose-500">*</span></label>
+            <input type="number" id="modalItemStock" step="any" min="0" required placeholder="0" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none font-semibold">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Alerta Mínima</label>
+            <input type="number" id="modalItemMinStock" step="any" min="0" value="2" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="app.closeNewItemModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl transition">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition">Guardar Insumo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Nuevo Empleado -->
+  <div id="modalNewEmployee" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+      <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2" id="modalEmployeeTitle">
+          <i class="fa-solid fa-user-plus text-blue-600"></i>
+          <span>Añadir Personal a Cargo</span>
+        </h3>
+        <button onclick="app.closeNewEmployeeModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="formNewEmployee" onsubmit="app.handleSaveEmployee(event)" class="space-y-3.5">
+        <input type="hidden" id="modalEmployeeId">
+        
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Nombre Completo <span class="text-rose-500">*</span></label>
+          <input type="text" id="modalEmpNombre" required placeholder="Ej: Juan Carlos Pérez" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Cargo o Área de Trabajo</label>
+          <input type="text" id="modalEmpCargo" placeholder="Ej: Servicios Generales, Mantenimiento..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Documento / Cédula</label>
+            <input type="text" id="modalEmpDocumento" placeholder="Opcional" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Teléfono / Extensión</label>
+            <input type="text" id="modalEmpTelefono" placeholder="Opcional" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="app.closeNewEmployeeModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-xl transition">Cancelar</button>
+          <button type="submit" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition">Guardar Empleado</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Script Principal -->
+  <script src="app.js"></script>
+</body>
+</html>

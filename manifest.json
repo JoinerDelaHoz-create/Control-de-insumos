@@ -1,0 +1,17 @@
+{
+  "name": "Control de Insumos - Universidad Metropolitana",
+  "short_name": "Insumos UMetro",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e3a8a",
+  "description": "Sistema de gestión y auditoría de insumos y materiales",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2897/2897785.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
