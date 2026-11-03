@@ -237,20 +237,24 @@ class InventoryApp {
         headers['X-Access-Key'] = key;
       }
 
-      let response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      // Evitar que el navegador devuelva respuestas cacheadas viejas
+      const url = `https://api.jsonbin.io/v3/b/${binId}/latest?_t=${Date.now()}`;
+      let response = await fetch(url, {
         method: 'GET',
-        headers: headers
+        headers: headers,
+        cache: 'no-store'
       });
 
       // Si falla con error de autorización, intentar sin headers por si el Bin es público
       if (!response.ok && (response.status === 401 || response.status === 403)) {
-        response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-          method: 'GET'
+        response = await fetch(url, {
+          method: 'GET',
+          cache: 'no-store'
         });
       }
 
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: No se pudo leer el Bin [${binId}]. Revisa si la Master Key es requerida.`);
+        throw new Error(`Error ${response.status}: No se pudo leer el Bin [${binId}].`);
       }
 
       const json = await response.json();
@@ -271,6 +275,7 @@ class InventoryApp {
         this.lastUpdated = record.lastUpdated || new Date().toISOString();
         this.saveLocalCacheOnly();
         this.renderAll();
+        this.updateLoginHint();
       }
 
       this.updateCloudUI();
@@ -300,22 +305,13 @@ class InventoryApp {
   }
 
   // SUBIR (PUT) A JSONBIN
-  async pushToJSONBin() {
+  async pushToJSONBin(forceCredentials = false) {
     if (!this.hasJSONBinConfig()) return;
 
     this.setSyncingAnimation(true);
     try {
       const binId = this.getJSONBinId();
       const key = this.getJSONBinKey();
-
-      const payload = {
-        items: this.items,
-        employees: this.employees,
-        movements: this.movements,
-        adminUser: this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin',
-        adminPass: this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234',
-        lastUpdated: this.lastUpdated || new Date().toISOString()
-      };
 
       const headers = {
         'Content-Type': 'application/json'
@@ -324,6 +320,43 @@ class InventoryApp {
         headers['X-Master-Key'] = key;
         headers['X-Access-Key'] = key;
       }
+
+      // Si no es un cambio explícito de credenciales, comprobar la nube para nunca sobreescribir una contraseña nueva
+      let targetUser = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+      let targetPass = this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
+
+      if (!forceCredentials) {
+        try {
+          const checkRes = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest?_t=${Date.now()}`, {
+            headers,
+            cache: 'no-store'
+          });
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.record) {
+              if (checkData.record.adminUser) {
+                targetUser = checkData.record.adminUser;
+                this.adminUser = targetUser;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, targetUser);
+              }
+              if (checkData.record.adminPass) {
+                targetPass = checkData.record.adminPass;
+                this.adminPass = targetPass;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, targetPass);
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      const payload = {
+        items: this.items,
+        employees: this.employees,
+        movements: this.movements,
+        adminUser: targetUser,
+        adminPass: targetPass,
+        lastUpdated: this.lastUpdated || new Date().toISOString()
+      };
 
       let response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
         method: 'PUT',
@@ -551,6 +584,11 @@ class InventoryApp {
   showLoginView() {
     document.getElementById('viewLogin').classList.remove('hidden');
     document.getElementById('viewApp').classList.add('hidden');
+    this.updateLoginHint();
+    const userInput = document.getElementById('loginUsername');
+    if (userInput && !userInput.value) {
+      userInput.value = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+    }
   }
 
   showAppView() {
@@ -567,11 +605,15 @@ class InventoryApp {
     const password = document.getElementById('loginPassword').value.trim();
     const rememberMe = document.getElementById('loginRememberMe').checked;
 
-    let savedUser = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
-    let savedPass = this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
+    const submitBtn = document.querySelector('#formFullLogin button[type="submit"]');
+    const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fa-solid fa-spinner spin-fast mr-2"></i> <span>Verificando con la nube...</span>';
+    }
 
-    // Si localmente no coincide, consultar a la nube JSONBin por si fue cambiada recientemente desde otro dispositivo (ej: desde el PC)
-    if (username !== savedUser || password !== savedPass) {
+    try {
+      // Siempre verificar directamente contra la nube JSONBin en vivo (con cache-busting)
       if (this.hasJSONBinConfig()) {
         try {
           const binId = this.getJSONBinId();
@@ -581,56 +623,75 @@ class InventoryApp {
             headers['X-Master-Key'] = key;
             headers['X-Access-Key'] = key;
           }
-          let res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers });
+          const url = `https://api.jsonbin.io/v3/b/${binId}/latest?_t=${Date.now()}`;
+          let res = await fetch(url, { headers, cache: 'no-store' });
           if (!res.ok && (res.status === 401 || res.status === 403)) {
-            res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`);
+            res = await fetch(url, { cache: 'no-store' });
           }
           if (res.ok) {
             const data = await res.json();
             if (data.record) {
               if (data.record.adminUser) {
-                savedUser = data.record.adminUser;
-                this.adminUser = savedUser;
-                localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, savedUser);
+                this.adminUser = data.record.adminUser;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, data.record.adminUser);
               }
               if (data.record.adminPass) {
-                savedPass = data.record.adminPass;
-                this.adminPass = savedPass;
-                localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, savedPass);
+                this.adminPass = data.record.adminPass;
+                localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, data.record.adminPass);
               }
+              this.saveLocalCacheOnly();
             }
           }
         } catch (err) {
           console.warn('Aviso al verificar credenciales en la nube:', err);
         }
       }
-    }
 
-    if (username === savedUser && password === savedPass) {
-      const token = 'token_auth_' + Date.now();
-      if (rememberMe) {
-        localStorage.setItem(this.STORAGE_KEYS.AUTH_TOKEN, token);
+      const savedUser = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+      const savedPass = this.adminPass || localStorage.getItem(this.STORAGE_KEYS.ADMIN_PASS) || 'admin1234';
+
+      if (username === savedUser && password === savedPass) {
+        const token = 'token_auth_' + Date.now();
+        if (rememberMe) {
+          localStorage.setItem(this.STORAGE_KEYS.AUTH_TOKEN, token);
+        } else {
+          sessionStorage.setItem(this.STORAGE_KEYS.AUTH_TOKEN, token);
+        }
+        this.isAdminAuthenticated = true;
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Acceso Concedido',
+          text: 'Bienvenido Jefe de Almacén',
+          timer: 1000,
+          showConfirmButton: false
+        }).then(() => {
+          this.showAppView();
+        });
       } else {
-        sessionStorage.setItem(this.STORAGE_KEYS.AUTH_TOKEN, token);
+        Swal.fire({
+          icon: 'error',
+          title: 'Credenciales Incorrectas',
+          html: `
+            <p class="text-xs text-slate-600 mb-1">El usuario o la contraseña ingresados no coinciden con las registradas en el sistema.</p>
+            <p class="text-[11px] text-slate-400">Usuario registrado: <strong class="text-blue-700">${this.escapeHtml(savedUser)}</strong></p>
+          `,
+          confirmButtonColor: '#1e40af'
+        });
       }
-      this.isAdminAuthenticated = true;
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+      }
+    }
+  }
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Acceso Concedido',
-        text: 'Bienvenido Jefe de Almacén',
-        timer: 1000,
-        showConfirmButton: false
-      }).then(() => {
-        this.showAppView();
-      });
-    } else {
-      Swal.fire({
-        icon: 'error',
-        title: 'Credenciales Incorrectas',
-        text: 'El usuario o la contraseña no coinciden con las registradas.',
-        confirmButtonColor: '#1e40af'
-      });
+  updateLoginHint() {
+    const hint = document.getElementById('loginHintText');
+    if (hint) {
+      const user = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+      hint.innerHTML = `Sincronizado con JSONBin &bull; Usuario activo: <span class="font-mono text-blue-700 font-bold">${this.escapeHtml(user)}</span>`;
     }
   }
 
@@ -662,25 +723,26 @@ class InventoryApp {
       sessionStorage.removeItem(this.STORAGE_KEYS.AUTH_TOKEN);
       this.isAdminAuthenticated = false;
       this.showLoginView();
+      this.updateLoginHint();
     }
   }
 
   async promptChangeAdminPassword() {
-    const savedUser = localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
+    const savedUser = this.adminUser || localStorage.getItem(this.STORAGE_KEYS.ADMIN_USER) || 'admin';
 
     const { value: formValues } = await Swal.fire({
-      title: 'Modificar Acceso Admin',
+      title: 'Cambiar Credenciales de Acceso',
       html: `
         <div class="space-y-3 text-left text-xs font-semibold">
           <label>Nuevo Usuario:</label>
-          <input id="swal-new-user" type="text" value="${savedUser}" class="swal2-input !mt-1 !text-sm">
+          <input id="swal-new-user" type="text" value="${this.escapeHtml(savedUser)}" class="swal2-input !mt-1 !text-sm">
           <label>Nueva Contraseña:</label>
-          <input id="swal-new-pass" type="password" placeholder="Mínimo 6 caracteres" class="swal2-input !mt-1 !text-sm">
+          <input id="swal-new-pass" type="password" placeholder="Mínimo 4 caracteres" class="swal2-input !mt-1 !text-sm">
         </div>
       `,
       focusConfirm: false,
       showCancelButton: true,
-      confirmButtonText: 'Guardar Cambios',
+      confirmButtonText: 'Guardar y Sincronizar en la Nube',
       confirmButtonColor: '#1e40af',
       cancelButtonText: 'Cancelar',
       preConfirm: () => {
@@ -694,20 +756,37 @@ class InventoryApp {
     if (formValues) {
       const [newUser, newPass] = formValues;
       if (!newUser) return Swal.fire({ icon: 'warning', text: 'El usuario no puede estar vacío.' });
-      if (!newPass || newPass.length < 6) return Swal.fire({ icon: 'warning', text: 'La contraseña debe tener al menos 6 caracteres.' });
+      if (!newPass || newPass.length < 4) return Swal.fire({ icon: 'warning', text: 'La contraseña debe tener al menos 4 caracteres.' });
+
+      Swal.fire({
+        title: 'Sincronizando con la Nube...',
+        text: 'Guardando nuevas credenciales en JSONBin para celular y PC...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
 
       this.adminUser = newUser;
       this.adminPass = newPass;
       localStorage.setItem(this.STORAGE_KEYS.ADMIN_USER, newUser);
       localStorage.setItem(this.STORAGE_KEYS.ADMIN_PASS, newPass);
+      this.saveLocalCacheOnly();
 
-      // Guardar localmente y subir de inmediato a la nube JSONBin
-      await this.persistState(true);
+      // Forzar subida a la nube JSONBin
+      await this.pushToJSONBin(true);
+
+      this.updateLoginHint();
 
       Swal.fire({
         icon: 'success',
-        title: 'Credenciales Sincronizadas',
-        text: 'El nuevo usuario y contraseña se han guardado y sincronizado en la nube para todos tus dispositivos.'
+        title: '¡Credenciales Sincronizadas!',
+        html: `
+          <div class="text-left text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <p><strong>Usuario guardado:</strong> <code class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono font-bold">${this.escapeHtml(newUser)}</code></p>
+            <p><strong>Contraseña guardada:</strong> <code class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-mono font-bold">${this.escapeHtml(newPass)}</code></p>
+            <p class="text-emerald-700 font-semibold mt-2">✅ Ya está actualizada en la nube JSONBin y funcionará en tu celular y cualquier otro dispositivo inmediatamente.</p>
+          </div>
+        `,
+        confirmButtonColor: '#10b981'
       });
     }
   }
